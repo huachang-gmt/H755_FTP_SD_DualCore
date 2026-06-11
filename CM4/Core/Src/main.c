@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "netif.h"
 #include "stm32h7xx_nucleo.h"
+#include "tcp_server.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -118,8 +119,8 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_LWIP_Init();
+  tcp_server_init();
   /* USER CODE BEGIN 2 */
-  __DSB(); // Data Synchronization Barrier (資料同步屏障)
 
   uint32_t last_link_check = 0;
   uint32_t toggle_timer = 0;

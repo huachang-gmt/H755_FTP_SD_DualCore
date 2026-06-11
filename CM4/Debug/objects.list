@@ -5,6 +5,7 @@
 "./Core/Src/stm32h7xx_it.o"
 "./Core/Src/syscalls.o"
 "./Core/Src/sysmem.o"
+"./Core/Src/tcp_server.o"
 "./Core/Startup/startup_stm32h755zitx.o"
 "./Drivers/BSP/Component/lan8742.o"
 "./Drivers/BSP/STM32H7xx_Nucleo/stm32h7xx_nucleo.o"
