@@ -90,19 +90,30 @@ PHY： LAN8742A
 
 ## SD 卡 存取 部分 
 
-### 本專案使用 STM32H755ZI-Q NUCLEO 開發板 NUCLEO-H755ZI-Q 
+## 專案目標： 
 * 將 STM32H7 以 Raw Sector 方式高速寫入 SD 卡的資料 
 * 重新讀出後，轉換成 Windows 可辨識的 FATFS 檔案。
-* 
-* 
-* 
-* 
-
-
-
-
-
 
 # 系統設計概念
 
+本系統分成兩個階段：
 
+---
+
+# 第一階段：高速 Raw Data 寫入 SD 卡
+
+目標：
+
+> 不透過 FATFS，
+> 直接以 Sector 方式高速寫入 SD 卡。
+
+---
+
+# 第二階段：Raw Data 生成 FATFS 檔案
+
+本專案第二階段：
+
+> 將 SD 卡內 Raw Data 重新讀出，
+> 並生成 Windows 可見檔案。
+
+---

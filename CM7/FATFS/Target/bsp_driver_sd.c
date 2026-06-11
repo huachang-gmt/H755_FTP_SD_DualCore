@@ -32,6 +32,12 @@
 
 extern SD_HandleTypeDef hsd1;
 
+extern volatile uint8_t sd_read_done;
+extern volatile uint8_t sd_read_error;
+
+extern volatile uint8_t sd_dma_tx_done;
+extern volatile uint8_t sd_dma_tx_error;
+
 /* USER CODE BEGIN BeforeInitSection */
 /* can be used to modify / undefine following code or add code */
 /* USER CODE END BeforeInitSection */
@@ -240,7 +246,14 @@ void HAL_SD_AbortCallback(SD_HandleTypeDef *hsd)
   */
 void HAL_SD_TxCpltCallback(SD_HandleTypeDef *hsd)
 {
+    sd_dma_tx_done = 1;
   BSP_SD_WriteCpltCallback();
+}
+
+void HAL_SD_ErrorCallback(SD_HandleTypeDef *hsd)
+{
+    sd_read_error = 1;
+    sd_dma_tx_error = 1;
 }
 
 /**
@@ -250,8 +263,10 @@ void HAL_SD_TxCpltCallback(SD_HandleTypeDef *hsd)
   */
 void HAL_SD_RxCpltCallback(SD_HandleTypeDef *hsd)
 {
+  sd_read_done = 1;
   BSP_SD_ReadCpltCallback();
 }
+
 
 /* USER CODE BEGIN CallBacksSection_C */
 /**

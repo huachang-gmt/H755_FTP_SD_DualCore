@@ -24,7 +24,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "ff.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,6 +62,71 @@ COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
 
+
+/******************************* 以下變數開啟，因為在其他檔案有用到 ****************************************/
+#define BUFFER_SIZE_BYTES     (32 * 1024)
+
+#define SD_BLOCK_SIZE         512
+#define SD_BLOCK_COUNT        (BUFFER_SIZE_BYTES / SD_BLOCK_SIZE)
+
+#define START_SECTOR          0x1000
+
+
+#define CHUNKS_PER_FILE       16    // 生成5個檔案，約 8 秒 432KB，8192筆資料 
+//#define CHUNKS_PER_FILE       64    // 生成 約 1.7MB 大小的檔案，檔案內容資料有 32768 筆資料
+
+#define MAX_FILES_TO_GENERATE 5   // 控制： 最多生成幾個檔案 方便測試。  5 -> 產生5個檔案
+
+#define PAYLOAD_SIZE        54
+
+#define PAYLOAD_BUFFER_SIZE \
+    (RECORD_COUNT * PAYLOAD_SIZE)
+
+#define RECORD_COUNT   (BUFFER_SIZE_BYTES / sizeof(log_record_t))
+
+typedef struct
+{
+    uint8_t payload[PAYLOAD_SIZE];
+
+    uint16_t tail;
+
+    uint32_t record_id;
+
+    uint32_t file_id;
+
+} log_record_t;
+
+FIL MyFile;
+
+__attribute__((section(".RAM_D1")))
+__attribute__((aligned(32)))
+log_record_t read_buffer[RECORD_COUNT];
+
+__attribute__((section(".RAM_D1")))
+__attribute__((aligned(32)))
+uint8_t payload_buffer[PAYLOAD_BUFFER_SIZE];
+
+__attribute__((section(".RAM_D1")))
+__attribute__((aligned(32)))
+log_record_t sd_buffer[RECORD_COUNT]; // 寫入 SD 卡 的 buffer
+
+uint32_t current_sector = START_SECTOR;
+
+uint32_t global_record_id = 0;
+uint32_t current_file_id = 0;
+
+uint32_t current_chunk_count = 0;
+
+// 以下四個變數在其他檔案用到，針對中斷當作旗標
+volatile uint8_t sd_read_done = 0;
+volatile uint8_t sd_read_error = 0;
+
+volatile uint8_t sd_dma_tx_done = 0;
+volatile uint8_t sd_dma_tx_error = 0;
+
+
+/****************************************************************************************/
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,6 +138,222 @@ static void MPU_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+
+/******************************* 暫時先關閉 ****************************************
+
+// ----------------- raw data to SD card START -------------------------
+// 模擬方式填滿 64 byte 資料
+void FillBuffer(void)
+{
+    uint32_t i;
+    uint32_t j;
+
+    log_record_t *record;
+
+    for(i = 0; i < RECORD_COUNT; i++)
+    {
+        record = &sd_buffer[i];
+
+        for(j = 0; j < 52; j++)
+        {
+            record->payload[j] =
+                (uint8_t)('A' + (j % 26));
+        }
+
+        record->payload[52] = '\r';
+        record->payload[53] = '\n';
+
+        record->tail = 0xAA55;
+
+        record->record_id = global_record_id++;
+
+        record->file_id = current_file_id;
+    }
+}
+
+// 計算 SD 卡內有機個 64M Byte 
+uint32_t CountSegments(uint32_t expected_segments)
+{
+    uint32_t segment_count = 0;
+
+    uint32_t segment;
+
+    uint32_t sector;
+
+    for(segment = 0;
+        segment < expected_segments;
+        segment++)
+    {
+        sector =
+            START_SECTOR +
+            (segment * CHUNKS_PER_FILE * SD_BLOCK_COUNT);
+
+        if(HAL_SD_ReadBlocks(&hsd1,
+                             (uint8_t*)read_buffer,
+                             sector,
+                             SD_BLOCK_COUNT,
+                             HAL_MAX_DELAY) != HAL_OK)
+        {
+            break;
+        }
+
+        SCB_InvalidateDCache_by_Addr(
+            (uint32_t*)read_buffer,
+            BUFFER_SIZE_BYTES
+        );
+
+        // 只檢查 tail marker
+
+        if(read_buffer[0].tail != 0xAA55)
+        {
+            break;
+        }
+
+        segment_count++;
+    }
+
+    return segment_count;
+}
+// ----------------- raw data to SD card END -------------------------
+
+// ----------------- raw data to FATFS START -------------------------
+uint8_t ValidateChunk(void)
+{
+    uint32_t i;
+
+    for(i = 0; i < RECORD_COUNT; i++)
+    {
+        if(read_buffer[i].tail != 0xAA55)
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+
+void GenerateFatFsFile(uint32_t file_id)
+{
+    UINT bw;
+
+    char filename[64];
+
+    uint32_t chunk;
+	
+	uint32_t i;
+
+    uint32_t payload_offset;
+
+    current_sector =
+        START_SECTOR +
+        (file_id * CHUNKS_PER_FILE * SD_BLOCK_COUNT);
+
+    sprintf(filename,
+            "LOG%04lu.TXT",
+            file_id);
+
+    
+    //PA6 HIGH 開始量測：  Raw Data -> FATFS 檔案生成總時間    
+    HAL_GPIO_WritePin(GPIOA,
+                      GPIO_PIN_6,
+                      GPIO_PIN_SET);
+
+    
+
+    // 建立 FATFS 檔案
+    if(f_open(&MyFile,
+              filename,
+              FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+        while(1);
+    }
+
+    // 開始讀取 Raw Data
+    for(chunk = 0; chunk < CHUNKS_PER_FILE; chunk++)
+    {
+        //DMA Read 32KB
+        sd_read_done = 0;
+        sd_read_error = 0;
+
+        if(HAL_SD_ReadBlocks_DMA(&hsd1,
+                                (uint8_t*)read_buffer,
+                                current_sector,
+                                SD_BLOCK_COUNT) != HAL_OK)
+        {
+            BSP_LED_On(LED_RED);
+            while(1);
+        }
+
+        //等待 DMA 完成
+        while(sd_read_done == 0)
+        {
+            if(sd_read_error)
+            {
+                BSP_LED_On(LED_RED);
+
+                while(1);
+            }
+            BSP_LED_On(LED_YELLOW);
+        }
+        BSP_LED_Off(LED_YELLOW);
+
+        while(HAL_SD_GetCardState(&hsd1) != HAL_SD_CARD_TRANSFER)
+        {
+          BSP_LED_On(LED_GREEN);
+        }
+        BSP_LED_Off(LED_GREEN);// 綠燈不亮，表示 Raw Data 很快讀取完成
+       
+        // D-Cache invalidate
+        SCB_InvalidateDCache_by_Addr(
+            (uint32_t*)read_buffer,
+            BUFFER_SIZE_BYTES
+        );
+		
+		if(ValidateChunk() == 0)
+        {
+            break;
+        }
+		
+		payload_offset = 0;
+
+        for(i = 0; i < RECORD_COUNT; i++)
+        {
+            memcpy(&payload_buffer[payload_offset],
+                   read_buffer[i].payload,
+                   PAYLOAD_SIZE);
+
+            payload_offset += PAYLOAD_SIZE;
+        }		
+          
+        if(f_write(&MyFile,
+                  payload_buffer,
+                  payload_offset,
+                  &bw) != FR_OK)
+        {
+            BSP_LED_On(LED_RED);
+            while(1);
+        } 
+         
+
+        // 下一段 Raw Sector
+        current_sector += SD_BLOCK_COUNT;
+    }
+
+    //關閉檔案
+    f_close(&MyFile);
+
+    // PA6 LOW   檔案完成
+    HAL_GPIO_WritePin(GPIOA,
+                      GPIO_PIN_6,
+                      GPIO_PIN_RESET);
+   
+}
+//  ----------------- raw data to FATFS END -------------------------
+*****************************************************************************/
+
 
 /* USER CODE END 0 */
 
@@ -154,7 +437,14 @@ Error_Handler();
   MX_SDMMC1_SD_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+FRESULT res;
+FIL file;
+UINT bw;
+UINT br;
 
+char write_buf[] = "FTP SD CARD TEST\r\n";
+
+char read_buf[64];
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -189,8 +479,243 @@ Error_Handler();
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  
+  /*
+  2048 loops = 1 個 64MB segment 
+  4096 loops = 2 個 64MB segment 
+  6144 loops = 3 個 64MB segment 
+  8192 loops = 4 個 64MB segment 
+  10240 loops = 5 個 64MB segment 
+
+  16384 loops = 8 個 64MB segment 
+  */
+
   while (1)
   {
+
+    // -------------- 以下這一段功能 會在 SD 卡 建立一個新檔案，TEST.txt，檔案內容： FTP SD CARD TEST ， LED 燈號： 綠燈與黃燈呈現恆亮。
+    BSP_LED_On(LED_YELLOW);
+
+    res = f_mount(&SDFatFS,
+                  (TCHAR const*)SDPath,
+                  1);
+
+    if(res != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+    res = f_open(&file,
+                 "TEST.TXT",
+                 FA_CREATE_ALWAYS | FA_WRITE);
+
+    if(res != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+    res = f_write(&file,
+                  write_buf,
+                  strlen(write_buf),
+                  &bw);
+
+    if(res != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+    f_close(&file);
+
+    memset(read_buf,0,sizeof(read_buf));
+
+    res = f_open(&file,
+                 "TEST.TXT",
+                 FA_READ);
+
+    if(res != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+    res = f_read(&file,
+                 read_buf,
+                 sizeof(read_buf)-1,
+                 &br);
+
+    if(res != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+    f_close(&file);
+
+    if(strcmp(read_buf,
+              "FTP SD CARD TEST\r\n") == 0)
+    {
+        BSP_LED_On(LED_GREEN);
+
+        while(1);
+    }
+    else
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+// --------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/******************************** 暫時關閉 ****************************************************
+    // ------------- 將 Raw Data 寫入 SD Card START -------------
+
+      uint64_t loop;
+      uint64_t max_loop = 40960; // 驗證過，確實會產生 20 個 Pulse 2026-05-28 
+      uint32_t segmentation = max_loop / 2048;
+
+      for(loop = 0; loop < max_loop; loop++)  //可形成 4 個 64MB segmentation
+      {
+          FillBuffer(); 
+          //memset(sd_buffer, 0x55, BUFFER_SIZE_BYTES);//驗證 FillBuffer(); 是否有問題之用
+
+          SCB_CleanDCache_by_Addr((uint32_t*)sd_buffer, BUFFER_SIZE_BYTES);
+
+          sd_dma_tx_done = 0;
+          sd_dma_tx_error = 0;
+
+          HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);//寫入到SD卡前拉高電位
+
+          if(HAL_SD_WriteBlocks_DMA(&hsd1,
+                                     (uint8_t*)sd_buffer,
+                                    current_sector,
+                                    SD_BLOCK_COUNT) != HAL_OK)
+          {
+              Error_Handler();
+          }
+
+          while((sd_dma_tx_done == 0) && (sd_dma_tx_error == 0))
+          {
+            // DMA背景寫入期間 CM7持續做別的工作 本行用於證明這是非阻塞式 工作模式，當 HAL_SD_WriteBlocks_DMA 執行後， CM7 控制權可以去做其他事情，不必等待 SD 卡寫完
+            //HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+          }
+
+          // ★ 等 SD card internal write 完成（關鍵）
+          while (HAL_SD_GetCardState(&hsd1) != HAL_SD_CARD_TRANSFER)
+          {
+          }
+
+          HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);// 完成SD卡寫入，電位拉低
+
+          if(sd_dma_tx_error)
+          {
+              Error_Handler();
+          }
+
+          current_sector += SD_BLOCK_COUNT;
+
+          current_chunk_count++;
+
+          if(current_chunk_count >= CHUNKS_PER_FILE)
+          {
+              current_chunk_count = 0;
+              current_file_id++;
+          }
+
+          //HAL_Delay(10);//不需要透過這種固定式延遲，由 while (HAL_SD_GetCardState(&hsd1) != HAL_SD_CARD_TRANSFER) 來判斷是否寫入完成
+      }
+
+
+      // 上面是寫入資料到 SD 卡，以 Raw data 方式，這裡是讀出 SD 卡資料。
+      // 每讀出一個 64M Byte 單位，就顯示一個脈波高電位
+      uint32_t segment_count;
+
+      segment_count = CountSegments(segmentation);
+
+      while(1)
+      {
+          uint32_t i;
+
+          for(i = 0; i < segment_count; i++)
+          {
+              HAL_GPIO_WritePin(GPIOA,
+                                GPIO_PIN_6,
+                                GPIO_PIN_SET);
+
+              HAL_Delay(1);
+
+              HAL_GPIO_WritePin(GPIOA,
+                                GPIO_PIN_6,
+                                GPIO_PIN_RESET);
+
+              HAL_Delay(1);
+          }
+
+          HAL_Delay(30);
+      }
+
+
+
+    // ------------- 將 Raw Data 寫入 SD Card END -------------
+
+
+
+
+    // ------------- 生成 FATFS 檔案 START -------------
+    uint32_t file_id;
+
+    if(f_mount(&SDFatFS,
+               (TCHAR const*)SDPath,
+               1) != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+        while(1);
+        Error_Handler();
+    }   
+
+    for(file_id = 0; file_id < MAX_FILES_TO_GENERATE; file_id++)  // 想要生成幾個1.7MB檔案，檔案內容資料有 32768 筆資料，修改 MAX_FILES_TO_GENERATE 數值即可
+    {
+        GenerateFatFsFile(file_id);
+    }   
+
+    while(1)
+    {
+    }
+    // ------------- 生成 FATFS 檔案 END -------------
+
+********************************************************************************************/
+
+
+
 
     /* USER CODE END WHILE */
 
@@ -275,7 +800,7 @@ void MPU_Config(void)
   MPU_InitStruct.Enable = MPU_REGION_ENABLE;
   MPU_InitStruct.Number = MPU_REGION_NUMBER0;
   MPU_InitStruct.BaseAddress = 0x24000000;
-  MPU_InitStruct.Size = MPU_REGION_SIZE_64KB;
+  MPU_InitStruct.Size = MPU_REGION_SIZE_256KB;// 這裡有修改，加大空間
   MPU_InitStruct.SubRegionDisable = 0x0;
   MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
   MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
@@ -287,6 +812,7 @@ void MPU_Config(void)
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
   HAL_MPU_Enable(MPU_HFNMI_PRIVDEF);
+  //HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT); // 之前成功的做法
 
 }
 
