@@ -3,6 +3,13 @@
 ## 開發進度追蹤
 
 
+[2026-06-15]
+1. Filezilla client 可以連接 開發板 FTP Server，連上線後，檔案列表會顯示 SD 卡 檔案。
+2. 因為讀取根目錄 "/" 會讀到 Raw data 形成的幽靈檔案，導致 正確的 FATFS 檔案數量與實際讀取得到的不同，因此，新增一個資料夾，LOGFILES，把 FATFS 檔案移到此資料夾，CM7 讀取檔案(數量) 也從此資料夾讀取，這樣可以避免掉讀取到 Raw data 問題。
+3. 使用 Filezilla 是屬於 PASV 被動式，如果連線後發現檔案列表沒有更新，這是 Filezilla cache 問題，要按下 F5 Refresh，就可以重新讓 Filezilla 呼叫 FTP Server LIST 一次，更新檔案列表。
+4. 這個版本因為不支援 主動式，所以，使用 Power shell 執行 ftp 192.168.88.10 -> anonymous -> anonymous -> ftp> dir -> 會卡住。
+5. 這個版本有許多 debug 用的 程式，先保留，必要時可以回用，下一版本再刪除。
+
 [2026-06-11] 完成 CM4 FTP Server 建置，可以透過 Filezilla Client 連接上。連接輸入 IP ： 192.168.88.10 使用者名稱： anonymous， 密碼 ： test 連接埠： 21 (可以不填) ，按下 快速連線，右側會出現 開發板端的 虛擬(模擬) 檔案列表，有兩個檔案： log.txt 與 test.txt 。 
 
 [2026-06-10] Ethernet 網路建置完成，從電腦端以網路線接到開發板 RJ45， ping 192.168.88.10 成功。 

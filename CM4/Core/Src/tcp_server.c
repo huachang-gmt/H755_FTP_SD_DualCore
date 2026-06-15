@@ -3,6 +3,8 @@
 #include "strings.h"
 #include "lwip/tcp.h"
 #include "main.h"
+#include "stdio.h"
+#include "cm7_file_index.h"
 
 static struct tcp_pcb *server_pcb = NULL;
 static struct tcp_pcb *pasv_pcb = NULL;
@@ -40,11 +42,111 @@ static err_t pasv_accept_callback(void *arg,
 // 新增：獨立出來的目錄資料傳送函式
 static void send_dir_list(void)
 {
+
+    /*
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET); //亮紅燈 (PB14) 驗證測試用  send_dir_list 確實被執行
+
+    // 測試實驗
+    SHARED_FILE_LIST *fss =
+        SHARED_FILE_LIST_ADDR;
+
+    if(strcmp(fss->files[0].filename,
+            "LOG0000.TXT") == 0)
+    {
+        HAL_GPIO_WritePin(GPIOE,
+                        GPIO_PIN_1,
+                        GPIO_PIN_SET);// 亮黃燈 (PE1)
+    }
+    // -----------------
+    */
+
+    if(data_client_pcb == NULL)
+    {
+        return;
+    }
+
+    volatile SHARED_FILE_LIST *fs = (volatile SHARED_FILE_LIST *)SHARED_FILE_LIST_ADDR;
+
+    char dir_data[8192];
+
+    uint32_t offset = 0;
+
+    memset(dir_data, 0, sizeof(dir_data));
+
+    for(uint32_t i = 0; i < fs->file_count; i++)
+    {
+        int len = snprintf(
+                    &dir_data[offset],
+                    sizeof(dir_data) - offset,
+                    "-rw-r--r-- 1 root root %lu %s\r\n",
+                    (unsigned long)fs->files[i].filesize,
+                    fs->files[i].filename);
+
+        if(len <= 0)
+        {
+            continue;
+        }
+
+        offset += len;
+
+        if(offset > (sizeof(dir_data) - 128))
+        {
+            break;
+        }
+    }
+
+    tcp_write(data_client_pcb,
+              dir_data,
+              strlen(dir_data),
+              TCP_WRITE_FLAG_COPY);
+
+    tcp_output(data_client_pcb);
+
+    tcp_close(data_client_pcb);
+
+    data_client_pcb = NULL;
+
+    data_connected = 0;
+
+    if(control_client_pcb != NULL)
+    {
+        const char *msg226 =
+            "226 Transfer complete\r\n";
+
+        tcp_write(control_client_pcb,
+                  msg226,
+                  strlen(msg226),
+                  TCP_WRITE_FLAG_COPY);
+
+        tcp_output(control_client_pcb);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*  虛擬檔案列表程式
+static void send_dir_list(void)
+{
     if(data_client_pcb != NULL)
     {
         const char *dir_data =
-            "-rw-r--r-- 1 root root 123 test.txt\r\n"
-            "-rw-r--r-- 1 root root 456 log.txt\r\n"; // 模擬檔案目錄，會顯示在 filezilla 右側
+                    "-rw-r--r-- 1 root root 123 LOG0000.TXT\r\n"
+                    "-rw-r--r-- 1 root root 123 LOG0001.TXT\r\n"
+                    "-rw-r--r-- 1 root root 123 LOG0002.TXT\r\n"
+                    "-rw-r--r-- 1 root root 123 LOG0003.TXT\r\n"
+                    "-rw-r--r-- 1 root root 123 LOG0004.TXT\r\n"
+                    "-rw-r--r-- 1 root root 123 TEST.TXT\r\n"; // 模擬檔案目錄，會顯示在 filezilla 右側
 
         tcp_write(data_client_pcb, dir_data, strlen(dir_data), TCP_WRITE_FLAG_COPY);
         tcp_output(data_client_pcb);
@@ -63,7 +165,7 @@ static void send_dir_list(void)
         }
     }
 }
-
+*/
 
 static void send_test_file(void)
 {
@@ -455,7 +557,8 @@ static err_t pasv_accept_callback(void *arg,
         pending_cmd = FTP_CMD_NONE; // 清除旗標
     }
 
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
+    //HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
+    // 綠燈亮表示 ： PASV Port 2020  已成功建立資料通道
 
     return ERR_OK;
 }

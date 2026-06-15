@@ -26,6 +26,8 @@
 #include "netif.h"
 #include "stm32h7xx_nucleo.h"
 #include "tcp_server.h"
+#include "cm7_file_index.h"
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -131,6 +133,36 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+/*
+    SHARED_FILE_LIST *fs = SHARED_FILE_LIST_ADDR;
+
+
+    if(fs->file_count > 0)
+    {
+        HAL_GPIO_WritePin(GPIOB,
+                          GPIO_PIN_0,
+                          GPIO_PIN_SET);      // 綠燈
+
+        if(strcmp(fs->files[0].filename, "LOG0000.TXT") == 0)
+        {
+          HAL_GPIO_WritePin(GPIOE, GPIO_PIN_1, GPIO_PIN_SET);
+        }
+
+    }
+    else
+    {
+        HAL_GPIO_WritePin(GPIOB,
+                          GPIO_PIN_14,
+                          GPIO_PIN_SET);      // 紅燈
+    }
+*/
+
+
+
+
+
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

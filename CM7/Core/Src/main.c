@@ -27,6 +27,7 @@
 #include "ff.h"
 #include <stdio.h>
 #include <string.h>
+#include "cm7_file_index.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -140,6 +141,99 @@ static void MPU_Config(void);
 /* USER CODE BEGIN 0 */
 
 
+
+
+
+
+
+
+
+
+
+
+/*
+void CM7_CountFiles_Test(void)
+{
+    DIR dir;
+    FILINFO fno;
+
+    FRESULT res;
+
+    uint32_t count = 0;
+
+    //res = f_opendir(&dir, "/");
+    res = f_opendir(&dir, "/LOGFILES");
+
+    if(res != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+    while(1)
+    {
+        res = f_readdir(&dir, &fno);
+
+        if(res != FR_OK)
+        {
+            BSP_LED_On(LED_RED);
+            BSP_LED_On(LED_YELLOW);
+            while(1);
+        }
+        
+        if(fno.fname[0] == 0)
+        {            
+            break;
+        }
+
+        if(fno.fattrib & AM_DIR)
+        {
+            continue;
+        }
+
+        count++;
+    }
+
+    f_closedir(&dir);
+*/
+    /*
+     * 你的 SD 卡目前應該只有：
+     *
+     * LOG0000.TXT
+     * LOG0001.TXT
+     * LOG0002.TXT
+     * LOG0003.TXT
+     * LOG0004.TXT
+     * TEST.TXT
+     *
+     * 共 6 個檔案
+     */
+
+     // 上週五下班前，我借了一張 64GB SD 卡，使用軟體工具 強制格式化為 FAT32，建立 6 個檔案，插入開發板 SD 卡槽，
+     // 執行程式，三個 LED 燈會亮。
+     // 如果使用那張有 Raw data 的 16GB SD 卡，則亮黃燈
+     /*
+    if(count == 6)
+    {
+        BSP_LED_On(LED_GREEN);
+        BSP_LED_On(LED_YELLOW);
+        BSP_LED_On(LED_RED);
+    }
+    else
+    {
+        BSP_LED_On(LED_YELLOW);
+    }
+
+    while(1);
+    */
+
+//}
+
+
+
+
+
 /******************************* 暫時先關閉 ****************************************
 
 // ----------------- raw data to SD card START -------------------------
@@ -250,8 +344,10 @@ void GenerateFatFsFile(uint32_t file_id)
         START_SECTOR +
         (file_id * CHUNKS_PER_FILE * SD_BLOCK_COUNT);
 
+    f_mkdir("LOGFILES");
+
     sprintf(filename,
-            "LOG%04lu.TXT",
+            "LOGFILES/LOG%04lu.TXT",
             file_id);
 
     
@@ -402,6 +498,11 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
+  /* Initialize leds */
+  BSP_LED_Init(LED_GREEN);
+  BSP_LED_Init(LED_YELLOW);
+  BSP_LED_Init(LED_RED);
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -436,21 +537,66 @@ Error_Handler();
   MX_GPIO_Init();
   MX_SDMMC1_SD_Init();
   MX_FATFS_Init();
+
   /* USER CODE BEGIN 2 */
-FRESULT res;
-FIL file;
-UINT bw;
-UINT br;
 
-char write_buf[] = "FTP SD CARD TEST\r\n";
+    FRESULT res;
 
-char read_buf[64];
+    res = f_mount(&SDFatFS, (TCHAR const*)SDPath, 1);
+
+    if(res != FR_OK)
+    {
+        BSP_LED_On(LED_RED);
+
+        while(1);
+    }
+
+    CM7_BuildFileList();
+
+
+    //uint32_t file_count;   
+    //file_count = CM7_BuildFileList();
+
+//CM7_CountFiles_Test();
+
+/*
+uint32_t file_count;
+
+file_count = CM7_CountFiles();
+
+if(file_count <= 133) //134
+{
+    BSP_LED_On(LED_GREEN);
+}
+
+else
+{
+    BSP_LED_On(LED_RED);
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   /* USER CODE END 2 */
 
-  /* Initialize leds */
-  BSP_LED_Init(LED_GREEN);
-  BSP_LED_Init(LED_YELLOW);
-  BSP_LED_Init(LED_RED);
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
@@ -494,20 +640,8 @@ char read_buf[64];
   while (1)
   {
 
-    // -------------- 以下這一段功能 會在 SD 卡 建立一個新檔案，TEST.txt，檔案內容： FTP SD CARD TEST ， LED 燈號： 綠燈與黃燈呈現恆亮。
-    BSP_LED_On(LED_YELLOW);
 
-    res = f_mount(&SDFatFS,
-                  (TCHAR const*)SDPath,
-                  1);
-
-    if(res != FR_OK)
-    {
-        BSP_LED_On(LED_RED);
-
-        while(1);
-    }
-
+/* 里程碑一 已經完成，下方程式沒用了。
     res = f_open(&file,
                  "TEST.TXT",
                  FA_CREATE_ALWAYS | FA_WRITE);
@@ -573,7 +707,7 @@ char read_buf[64];
 
         while(1);
     }
-
+*/
 // --------------------------------------------------------------------------------------
 
 

@@ -44,12 +44,13 @@ _Min_Stack_Size = 0x2000; /* required amount of stack */
 /* Memories definition */
 MEMORY
 {
-  RAM_D1 (xrw)   : ORIGIN = 0x24000000, LENGTH =  512K
+  RAM_D1 (xrw)   : ORIGIN = 0x24000000, LENGTH =  512K  /* DMA / ETH / SDMMC（高速）*/
   FLASH   (rx)   : ORIGIN = 0x08000000, LENGTH = 1024K    /* Memory is divided. Actual start is 0x08000000 and actual length is 2048K */
-  DTCMRAM (xrw)  : ORIGIN = 0x20000000, LENGTH = 128K
-  RAM_D2 (xrw)   : ORIGIN = 0x30000000, LENGTH = 288K
-  RAM_D3 (xrw)   : ORIGIN = 0x38000000, LENGTH = 64K
+  DTCMRAM (xrw)  : ORIGIN = 0x20000000, LENGTH = 128K   /* CPU stack  ultra fast*/
+  RAM_D2 (xrw)   : ORIGIN = 0x30000000, LENGTH = 288K   /* 一般共享 RAM */
+  RAM_D3 (xrw)   : ORIGIN = 0x38000000, LENGTH = 64K    /* 小容量 backup */
   ITCMRAM (xrw)  : ORIGIN = 0x00000000, LENGTH = 64K
+  SHARED_RAM (xrw) : ORIGIN = 0x30040000, LENGTH = 16K   /* 共享記憶體 放在 RAM_D2 一部分 位置 */
 }
 
 /* Sections */
@@ -176,6 +177,16 @@ SECTIONS
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >RAM_D1
+
+  /* =========================
+    CM7 → CM4 FILE LIST SHARED AREA
+    ========================= */
+  .shared_fs (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.shared_fs)
+    . = ALIGN(32);
+  } >SHARED_RAM
 
   /* Remove information from the compiler libraries */
   /DISCARD/ :
