@@ -3,6 +3,17 @@
 ## 開發進度追蹤
 
 
+
+[2026-06-17]
+1. 增加功能 ： 偵測 SD 卡是否存在於開發板的 SD 卡槽內。一旦 SD卡拔除，開發板上的紅色 LED 燈亮。當 SD 卡插入 SD 卡槽，開發板上的綠色 LED 燈亮一秒後熄滅。
+2. 完成 支援 FTP Server 主動模式 (Active Mode) 功能，可以透過 終端機 (Power shell) 視窗，執行命令： ftp 192.168.88.10 ->  anonymous -> anonymous 進入到提示符號 ftp> 下。執行 ftp> dir 命令，會將 SD 卡內的檔案列表 顯示出來。
+3. 完成 刷新功能。 實驗步驟： ftp> dir 顯示出12個檔案列表。 拔除 SD 卡，插入電腦，增加一個檔案，再把 SD 卡插入 開發板 SD 卡槽，再一次執行 ftp> dir，會看到 新增加的檔案再列表中。
+4. 特別注意，使用 FTP 主動模式與電腦 Power Shell 終端機  連接， 要關閉防火牆。 設定方式： 開始 -> 搜尋 控制台 -> 選擇  系統及安全性 -> 選擇 Windows Defender 防火牆 -> 選擇左側 開啟或關閉 Windows Defender 防火牆，然後關閉 所有防火牆。
+5. 另外一種方式，防火牆全部開啟狀態下，在 Windows Defender 防火牆 -> 選擇左側 允許應用程式透過 Windows Defender 防火牆通訊 -> 在 允許的應用程式與功能框架下，移動到最後(最底下)，有一個 『檔案傳輸程式』 把 公用 勾選，也勾選 檔案傳輸程式 的 checkbox，按下確定， ftp> dir 就會顯示出檔案列表，在防火牆開啟情況下。
+
+[2026-06-16]
+1. 除了已經建立完成的 PASV 被動模式 (Filezilla client 支援此模式)，再添加 主動模式 (Active Mode)，因為使用 Windows 終端機 輸入 ftp 192.168.88.10 或是 使用 檔案總管 都是採用 主動模式。但必須注意，主動模式是 MCU 主動連接 電腦端，因此，Windows 防火牆必須關閉，或是開放特定 socket 通過，不然 ftp 192.168.88.10 會 停滯 失敗，不會出現檔案列表。
+
 [2026-06-15]
 1. Filezilla client 可以連接 開發板 FTP Server，連上線後，檔案列表會顯示 SD 卡 檔案。
 2. 因為讀取根目錄 "/" 會讀到 Raw data 形成的幽靈檔案，導致 正確的 FATFS 檔案數量與實際讀取得到的不同，因此，新增一個資料夾，LOGFILES，把 FATFS 檔案移到此資料夾，CM7 讀取檔案(數量) 也從此資料夾讀取，這樣可以避免掉讀取到 Raw data 問題。
@@ -10,9 +21,11 @@
 4. 這個版本因為不支援 主動式，所以，使用 Power shell 執行 ftp 192.168.88.10 -> anonymous -> anonymous -> ftp> dir -> 會卡住。
 5. 這個版本有許多 debug 用的 程式，先保留，必要時可以回用，下一版本再刪除。
 
-[2026-06-11] 完成 CM4 FTP Server 建置，可以透過 Filezilla Client 連接上。連接輸入 IP ： 192.168.88.10 使用者名稱： anonymous， 密碼 ： test 連接埠： 21 (可以不填) ，按下 快速連線，右側會出現 開發板端的 虛擬(模擬) 檔案列表，有兩個檔案： log.txt 與 test.txt 。 
+[2026-06-11] 
+完成 CM4 FTP Server 建置，可以透過 Filezilla Client 連接上。連接輸入 IP ： 192.168.88.10 使用者名稱： anonymous， 密碼 ： test 連接埠： 21 (可以不填) ，按下 快速連線，右側會出現 開發板端的 虛擬(模擬) 檔案列表，有兩個檔案： log.txt 與 test.txt 。 
 
-[2026-06-10] Ethernet 網路建置完成，從電腦端以網路線接到開發板 RJ45， ping 192.168.88.10 成功。 
+[2026-06-10] 
+Ethernet 網路建置完成，從電腦端以網路線接到開發板 RJ45， ping 192.168.88.10 成功。 
 
 
 ## 專案簡介
@@ -124,3 +137,15 @@ PHY： LAN8742A
 > 並生成 Windows 可見檔案。
 
 ---
+## 圖示
+
+![NUCLEO-H755ZI-Q](images/FTPServerInPowerShell_1.png)
+
+![NUCLEO-H755ZI-Q](images/FTPServerInPowerShell_2.png)
+
+![NUCLEO-H755ZI-Q](images/FilezillaListSDFiles.png)
+
+![NUCLEO-H755ZI-Q](images/FirewallClosed.png)
+
+![NUCLEO-H755ZI-Q](images/AllowFTPPasssFirewall.png)
+

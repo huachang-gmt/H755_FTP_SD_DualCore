@@ -125,6 +125,8 @@ volatile uint8_t sd_read_error = 0;
 volatile uint8_t sd_dma_tx_done = 0;
 volatile uint8_t sd_dma_tx_error = 0;
 
+volatile uint8_t g_sd_inserted = 0; // SD 卡插拔狀態 旗標
+volatile uint8_t g_sd_mounted  = 0; // SD 卡插拔狀態 旗標
 
 /****************************************************************************************/
 
@@ -139,97 +141,6 @@ static void MPU_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-void CM7_CountFiles_Test(void)
-{
-    DIR dir;
-    FILINFO fno;
-
-    FRESULT res;
-
-    uint32_t count = 0;
-
-    //res = f_opendir(&dir, "/");
-    res = f_opendir(&dir, "/LOGFILES");
-
-    if(res != FR_OK)
-    {
-        BSP_LED_On(LED_RED);
-
-        while(1);
-    }
-
-    while(1)
-    {
-        res = f_readdir(&dir, &fno);
-
-        if(res != FR_OK)
-        {
-            BSP_LED_On(LED_RED);
-            BSP_LED_On(LED_YELLOW);
-            while(1);
-        }
-        
-        if(fno.fname[0] == 0)
-        {            
-            break;
-        }
-
-        if(fno.fattrib & AM_DIR)
-        {
-            continue;
-        }
-
-        count++;
-    }
-
-    f_closedir(&dir);
-*/
-    /*
-     * 你的 SD 卡目前應該只有：
-     *
-     * LOG0000.TXT
-     * LOG0001.TXT
-     * LOG0002.TXT
-     * LOG0003.TXT
-     * LOG0004.TXT
-     * TEST.TXT
-     *
-     * 共 6 個檔案
-     */
-
-     // 上週五下班前，我借了一張 64GB SD 卡，使用軟體工具 強制格式化為 FAT32，建立 6 個檔案，插入開發板 SD 卡槽，
-     // 執行程式，三個 LED 燈會亮。
-     // 如果使用那張有 Raw data 的 16GB SD 卡，則亮黃燈
-     /*
-    if(count == 6)
-    {
-        BSP_LED_On(LED_GREEN);
-        BSP_LED_On(LED_YELLOW);
-        BSP_LED_On(LED_RED);
-    }
-    else
-    {
-        BSP_LED_On(LED_YELLOW);
-    }
-
-    while(1);
-    */
-
-//}
-
 
 
 
@@ -540,60 +451,35 @@ Error_Handler();
 
   /* USER CODE BEGIN 2 */
 
-    FRESULT res;
-
-    res = f_mount(&SDFatFS, (TCHAR const*)SDPath, 1);
-
-    if(res != FR_OK)
+    // CM7 負責 FATFS 與 SD 卡，所以在這裡要偵測 SD 卡是否存在
+    if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET) // 確認 SD 卡 存在
     {
-        BSP_LED_On(LED_RED);
+        FRESULT res;
 
-        while(1);
+        res = f_mount(&SDFatFS, (TCHAR const*)SDPath, 1);
+
+        if(res == FR_OK)
+        {
+            g_sd_inserted = 1;
+            g_sd_mounted  = 1;
+
+            CM7_BuildFileList();
+        }
+        else
+        {
+            g_sd_inserted = 1;
+            g_sd_mounted  = 0;
+            // 有偵測到 SD 卡存在，但 mount 失敗
+            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
+        }
     }
-
-    CM7_BuildFileList();
-
-
-    //uint32_t file_count;   
-    //file_count = CM7_BuildFileList();
-
-//CM7_CountFiles_Test();
-
-/*
-uint32_t file_count;
-
-file_count = CM7_CountFiles();
-
-if(file_count <= 133) //134
-{
-    BSP_LED_On(LED_GREEN);
-}
-
-else
-{
-    BSP_LED_On(LED_RED);
-}
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    else
+    {
+        // 沒有 SD 卡 存在
+        g_sd_inserted = 0;
+        g_sd_mounted  = 0;
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
+    }
 
   /* USER CODE END 2 */
 
@@ -636,99 +522,107 @@ else
 
   16384 loops = 8 個 64MB segment 
   */
+  uint8_t current_sd_state;
 
   while (1)
   {
+   
 
+    current_sd_state = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET);
 
-/* 里程碑一 已經完成，下方程式沒用了。
-    res = f_open(&file,
-                 "TEST.TXT",
-                 FA_CREATE_ALWAYS | FA_WRITE);
-
-    if(res != FR_OK)
+    // SD 拔除事件
+    if((current_sd_state == 0) && (g_sd_inserted == 1))
     {
-        BSP_LED_On(LED_RED);
+        f_mount(NULL, "", 0);
 
-        while(1);
+        g_sd_inserted = 0;
+        g_sd_mounted  = 0;
+
+        memset((void*)g_shared_file_list.files, 0, sizeof(g_shared_file_list.files));
+
+        g_shared_file_list.file_count = 0;
+        g_shared_file_list.update_request = 0;
+        g_shared_file_list.update_busy = 0;
+        g_shared_file_list.update_done = 0;
+
+        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list));
+
+        // SD 卡不再插槽內
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
+
     }
 
-    res = f_write(&file,
-                  write_buf,
-                  strlen(write_buf),
-                  &bw);
-
-    if(res != FR_OK)
+    // SD 插入事件
+    if((current_sd_state == 1) && (g_sd_inserted == 0))
     {
-        BSP_LED_On(LED_RED);
+        HAL_SD_DeInit(&hsd1);
 
-        while(1);
+        MX_SDMMC1_SD_Init();
+
+        if(f_mount(&SDFatFS, (TCHAR const*)SDPath, 1) == FR_OK)
+        {
+            g_sd_inserted = 1;
+            g_sd_mounted  = 1;
+
+            CM7_BuildFileList();
+
+            g_shared_file_list.update_done = 1;
+        }
+        else
+        {
+            g_sd_inserted = 1;
+            g_sd_mounted  = 0;
+        }
+        // SD 卡在插槽內
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
+        HAL_Delay(1000);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);// 一秒後綠燈熄滅
     }
 
-    f_close(&file);
+    SCB_InvalidateDCache_by_Addr(
+        (uint32_t *)&g_shared_file_list,
+        sizeof(g_shared_file_list));
 
-    memset(read_buf,0,sizeof(read_buf));
-
-    res = f_open(&file,
-                 "TEST.TXT",
-                 FA_READ);
-
-    if(res != FR_OK)
+    if(g_shared_file_list.update_request)
     {
-        BSP_LED_On(LED_RED);
+        //HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
 
-        while(1);
+        g_shared_file_list.update_busy = 1;
+
+        g_shared_file_list.update_done = 0;
+
+        SCB_CleanDCache_by_Addr(
+            (uint32_t *)&g_shared_file_list,
+            sizeof(g_shared_file_list));
+
+        CM7_BuildFileList();
+
+        g_shared_file_list.update_done = 1;
+        g_shared_file_list.update_busy = 0;
+        g_shared_file_list.update_request = 0;
+
+        SCB_CleanDCache_by_Addr(
+            (uint32_t *)&g_shared_file_list,
+            sizeof(g_shared_file_list));
     }
 
-    res = f_read(&file,
-                 read_buf,
-                 sizeof(read_buf)-1,
-                 &br);
-
-    if(res != FR_OK)
-    {
-        BSP_LED_On(LED_RED);
-
-        while(1);
-    }
-
-    f_close(&file);
-
-    if(strcmp(read_buf,
-              "FTP SD CARD TEST\r\n") == 0)
-    {
-        BSP_LED_On(LED_GREEN);
-
-        while(1);
-    }
-    else
-    {
-        BSP_LED_On(LED_RED);
-
-        while(1);
-    }
+/*
+// 插拔 SD 卡偵測
+if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET)
+{
+    // SD 卡在插槽內
+   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
+   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
+}
+else
+{
+    // SD 卡不再插槽內
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
+}
 */
-// --------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /******************************** 暫時關閉 ****************************************************
     // ------------- 將 Raw Data 寫入 SD Card START -------------

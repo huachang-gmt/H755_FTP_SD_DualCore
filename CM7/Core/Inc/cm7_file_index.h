@@ -19,7 +19,10 @@
 
 typedef struct
 {
-    uint32_t file_count;
+    volatile uint32_t update_request;
+    volatile uint32_t update_busy;
+    volatile uint32_t update_done;
+    volatile uint32_t file_count;
     FILE_INFO files[MAX_FILES];
 } SHARED_FILE_LIST;
 
