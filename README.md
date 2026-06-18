@@ -4,6 +4,11 @@
 
 
 
+[2026-06-18]
+1. Filezilla client 也支援 主動模式 連線 FTP server，使用站台管理員中的傳輸設定，就可以變更為主動模式 (Active Mode) 連線 CM4 FTP Server。 此版本支援 使用 Power shell 執行命令 ftp 192.168.88.10 ftp>dir 也支援 Filezilla client 採用 主動模式 連線 CM4 FTP Server。
+
+
+
 [2026-06-17]
 1. 增加功能 ： 偵測 SD 卡是否存在於開發板的 SD 卡槽內。一旦 SD卡拔除，開發板上的紅色 LED 燈亮。當 SD 卡插入 SD 卡槽，開發板上的綠色 LED 燈亮一秒後熄滅。
 2. 完成 支援 FTP Server 主動模式 (Active Mode) 功能，可以透過 終端機 (Power shell) 視窗，執行命令： ftp 192.168.88.10 ->  anonymous -> anonymous 進入到提示符號 ftp> 下。執行 ftp> dir 命令，會將 SD 卡內的檔案列表 顯示出來。

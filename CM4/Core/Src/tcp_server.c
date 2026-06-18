@@ -255,6 +255,7 @@ static err_t tcp_recv_callback(void *arg,
         if(tpcb == control_client_pcb) control_client_pcb = NULL;
 
         ftp_rx_index = 0;
+        memset(ftp_rx_buffer, 0, sizeof(ftp_rx_buffer));
 
         tcp_close(tpcb);
 
@@ -331,8 +332,21 @@ static err_t tcp_recv_callback(void *arg,
             }
             else if(strncmp(ftp_rx_buffer, "PASV", 4) == 0)
             {
-                active_mode = 0;
-                ftp_pasv_init(); // 初始化 改從 main 移到這裡
+                active_mode = 0;   // 確保切換為被動模式
+                pending_cmd = FTP_CMD_NONE; // 清空先前的遺留指令
+
+                // 如果先前有殘留的主動式資料連線，先予關閉
+                if(data_client_pcb != NULL)
+                {
+                    tcp_arg(data_client_pcb, NULL);
+                    tcp_sent(data_client_pcb, NULL);
+                    tcp_close(data_client_pcb);
+                    data_client_pcb = NULL;
+                }
+                ftp_transfer_busy = 0; // 👈 強制復位
+                data_connected = 0;
+
+                ftp_pasv_init();   // 初始化被動監聽 Port 2020
                 reply = "227 Entering Passive Mode (192,168,88,10,7,228)\r\n";
             }
             else if(strncmp(ftp_rx_buffer, "PORT", 4) == 0)
@@ -344,23 +358,35 @@ static err_t tcp_recv_callback(void *arg,
                         &h1,&h2,&h3,&h4,
                         &p1,&p2) == 6)
                 {
-                    IP4_ADDR(&active_ip,
-                            h1,h2,h3,h4);
+                    // ⚠️ 為了絕對保證主動式正常：當收到 PORT 指令，代表 Client 要走主動式，必須立刻關閉被動式的監聽
+                    if(pasv_pcb != NULL)
+                    {
+                        tcp_arg(pasv_pcb, NULL);
+                        tcp_accept(pasv_pcb, NULL);
+                        tcp_close(pasv_pcb);
+                        pasv_pcb = NULL;
+                    }
 
-                    active_port =
-                        (p1 << 8) | p2;
+                    IP4_ADDR(&active_ip, h1, h2, h3, h4);
+                    active_port = (p1 << 8) | p2;
+                    active_mode = 1; // 確立主動模式
+                    pending_cmd = FTP_CMD_NONE;
 
-                    active_mode = 1;
-
+                    if(data_client_pcb != NULL)
+                    {
+                        tcp_arg(data_client_pcb, NULL);
+                        tcp_sent(data_client_pcb, NULL);
+                        tcp_close(data_client_pcb);
+                        data_client_pcb = NULL;
+                    }
+                    ftp_transfer_busy = 0; // 👈 強制復位
                     data_connected = 0;
 
                     reply = "200 PORT command successful\r\n";
-
                 }
                 else
                 {
-                    reply =
-                        "501 Syntax error in PORT\r\n";
+                    reply = "501 Syntax error in PORT\r\n";
                 }
             }
             else if(strncmp(ftp_rx_buffer, "LIST", 4) == 0 || strncmp(ftp_rx_buffer, "NLST", 4) == 0)
@@ -506,6 +532,7 @@ static err_t tcp_recv_callback(void *arg,
                 tcp_output(tpcb);
 
                 ftp_rx_index = 0;
+                memset(ftp_rx_buffer, 0, sizeof(ftp_rx_buffer));
 
                 tcp_recved(tpcb,
                         p->tot_len);
@@ -525,6 +552,7 @@ static err_t tcp_recv_callback(void *arg,
             }
 
             ftp_rx_index = 0;
+            memset(ftp_rx_buffer, 0, sizeof(ftp_rx_buffer));
         }
     }
 
@@ -563,56 +591,77 @@ static void ftp_active_connect(void)
                 active_port,
                 active_connect_callback);
 
-    //HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
 
 }
 
-
 void ftp_pasv_init(void)
 {
-
     ip_addr_t ipaddr;
 
+    // 徹底清除舊的 pasv 監聽控制塊，防止核心鏈表殘留
     if(pasv_pcb != NULL)
     {
+        tcp_arg(pasv_pcb, NULL);
+        tcp_accept(pasv_pcb, NULL);
         tcp_close(pasv_pcb);
         pasv_pcb = NULL;
     }
 
-    pasv_pcb = tcp_new();
-
-    if(pasv_pcb == NULL)
+    struct tcp_pcb *temp_pcb = tcp_new();
+    if(temp_pcb == NULL)
     {
         return;
     }
 
-    IP_ADDR4(&ipaddr,0,0,0,0);
+    IP_ADDR4(&ipaddr, 0, 0, 0, 0);
 
-    if(tcp_bind(pasv_pcb,
-                &ipaddr,
-                2020) != ERR_OK)
+    // 允許連接埠重用（防止極短時間內反覆進出 PASV 導致綁定失敗）
+    ip_set_option(temp_pcb, SOF_REUSEADDR);
+
+    if(tcp_bind(temp_pcb, &ipaddr, 2020) != ERR_OK)
     {
+        tcp_close(temp_pcb);
         return;
     }
 
-    pasv_pcb = tcp_listen(pasv_pcb);
+    // ⚠️ 關鍵：tcp_listen 會釋放 temp_pcb，並回傳一個 listen 專用的新 pcb
+    struct tcp_pcb *listen_pcb = tcp_listen_with_backlog(temp_pcb, 1);
+    if(listen_pcb == NULL)
+    {
+        // 如果 listen 失敗，原本的 temp_pcb 已被 LwIP 自動釋放，直接退出
+        return;
+    }
 
-    tcp_accept(pasv_pcb,
-               pasv_accept_callback);
+    pasv_pcb = listen_pcb;
+    tcp_accept(pasv_pcb, pasv_accept_callback);
 }
 
 static err_t pasv_accept_callback(void *arg,
                                   struct tcp_pcb *newpcb,
                                   err_t err)
 {
-    data_client_pcb = newpcb;
+    if (err != ERR_OK || newpcb == NULL)
+    {
+        return ERR_VAL;
+    }
 
+    data_client_pcb = newpcb;
     data_connected = 1;
 
-    // 修改：當 FileZilla 終於完成 Port 2020 連線，檢查是否有先前卡住的 LIST 指令
+    // ⚠️ 關鍵：一旦接受了 Client 的資料通道連線，立刻關閉並釋放監聽 PCB
+    if(pasv_pcb != NULL)
+    {
+        tcp_arg(pasv_pcb, NULL);
+        tcp_accept(pasv_pcb, NULL);
+        tcp_close(pasv_pcb);
+        pasv_pcb = NULL;
+    }
+
+    // 當 FileZilla 完成 Port 2020 連線，檢查是否有先前卡住的指令
     if(pending_cmd == FTP_CMD_LIST || pending_cmd == FTP_CMD_NLST)
     {
-        send_dir_list();        // 執行延遲傳送
+        send_dir_list();            // 執行延遲傳送
         pending_cmd = FTP_CMD_NONE; // 清除旗標
     }    
     else if(pending_cmd == FTP_CMD_RETR)
@@ -620,9 +669,6 @@ static err_t pasv_accept_callback(void *arg,
         send_test_file();
         pending_cmd = FTP_CMD_NONE; // 清除旗標
     }
-
-    //HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
-    // 綠燈亮表示 ： PASV Port 2020  已成功建立資料通道
 
     return ERR_OK;
 }

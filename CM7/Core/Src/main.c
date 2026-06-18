@@ -528,7 +528,7 @@ Error_Handler();
   {
    
 
-    current_sd_state = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET);
+    current_sd_state = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET); // 插拔 SD 卡偵測
 
     // SD 拔除事件
     if((current_sd_state == 0) && (g_sd_inserted == 1))
@@ -587,8 +587,6 @@ Error_Handler();
 
     if(g_shared_file_list.update_request)
     {
-        //HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
-
         g_shared_file_list.update_busy = 1;
 
         g_shared_file_list.update_done = 0;
@@ -606,23 +604,9 @@ Error_Handler();
         SCB_CleanDCache_by_Addr(
             (uint32_t *)&g_shared_file_list,
             sizeof(g_shared_file_list));
+    
     }
 
-/*
-// 插拔 SD 卡偵測
-if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET)
-{
-    // SD 卡在插槽內
-   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
-   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
-}
-else
-{
-    // SD 卡不再插槽內
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
-}
-*/
 
 /******************************** 暫時關閉 ****************************************************
     // ------------- 將 Raw Data 寫入 SD Card START -------------
