@@ -6,12 +6,16 @@
 ### [2026-06-23]
 1. 修改點： CM7\Core\Src\main.c ， CM7\Core\Src\cm7_file_index.c 與 CM4\Core\Src\tcp_server.c 。
 2. 在檔案 ： CM4\Core\Src\tcp_server.c 卡關很久，關鍵點在 send_dir_list() 內的 
-                int len = snprintf(
-                    &dir_data[offset],
-                    sizeof(dir_data) - offset,
-                    "-rw-r--r-- 1 root root %lu Jan 01 2026 %s\r\n",
-                    (unsigned long)fs->files[i].filesize,
-                    (const char *)fs->files[i].filename);
+
+```c
+int len = snprintf(
+        &dir_data[offset],
+        sizeof(dir_data) - offset,
+        "-rw-r--r-- 1 root root %lu Jan 01 2026 %s\r\n",
+        (unsigned long)fs->files[i].filesize,
+        (const char *)fs->files[i].filename);
+```
+
         檔案名稱和顯示 "-rw-r--r-- 1 root root %lu Jan 01 2026 %s\r\n", 是關鍵。
         問題發生在於 ：
         (1) Filezilla 一開始就無法連上線。
