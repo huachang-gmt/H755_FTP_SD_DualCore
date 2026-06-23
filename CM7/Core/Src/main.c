@@ -449,11 +449,13 @@ Error_Handler();
   MX_SDMMC1_SD_Init();
   MX_FATFS_Init();
 
-  /* USER CODE BEGIN 2 */
+  /* USER CODE BEGIN 2 */    
 
     // CM7 負責 FATFS 與 SD 卡，所以在這裡要偵測 SD 卡是否存在
     if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) == GPIO_PIN_RESET) // 確認 SD 卡 存在
     {
+        g_shared_file_list.sd_dropped = 0;
+
         FRESULT res;
 
         res = f_mount(&SDFatFS, (TCHAR const*)SDPath, 1);
@@ -478,6 +480,9 @@ Error_Handler();
         // 沒有 SD 卡 存在
         g_sd_inserted = 0;
         g_sd_mounted  = 0;
+
+        g_shared_file_list.sd_dropped = 1;
+
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);// 亮紅燈 (PB14)
     }
 
@@ -545,6 +550,9 @@ Error_Handler();
         g_shared_file_list.update_busy = 0;
         g_shared_file_list.update_done = 0;
 
+        // 【關鍵加入】：通知 CM4，SD卡已經不見了，趕快把 FTP 客戶端斷開！
+        g_shared_file_list.sd_dropped = 1;
+
         SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list));
 
         // SD 卡不再插槽內
@@ -574,6 +582,10 @@ Error_Handler();
             g_sd_inserted = 1;
             g_sd_mounted  = 0;
         }
+
+        g_shared_file_list.sd_dropped = 0; // 【關鍵加入】還原旗標
+        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list));    
+
         // SD 卡在插槽內
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);

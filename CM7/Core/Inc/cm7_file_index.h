@@ -23,6 +23,7 @@ typedef struct
     volatile uint32_t update_busy;
     volatile uint32_t update_done;
     volatile uint32_t file_count;
+    volatile uint8_t sd_dropped;   // 【新增】1: 代表 SD 卡被拔除，控制網路端主動斷線
     FILE_INFO files[MAX_FILES];
 } SHARED_FILE_LIST;
 

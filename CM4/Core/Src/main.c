@@ -28,6 +28,8 @@
 #include "tcp_server.h"
 #include "cm7_file_index.h"
 #include <string.h>
+#include "lwip/tcp.h"       // 提供 tcp_write, tcp_output, TCP_WRITE_FLAG_COPY
+#include "lwip/priv/tcp_priv.h" // 關鍵：LwIP 的 tcp_abort 原型宣告在這裡！
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -71,6 +73,39 @@ extern struct netif gnetif; // 這是 CubeMX LwIP 自動生成的網路介面結
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+extern struct tcp_pcb *control_client_pcb; // FTP 21 埠控制連線
+extern struct tcp_pcb *data_client_pcb;    // FTP 數據傳輸連線
+extern volatile uint8_t ftp_transfer_busy;
+void CM4_FTP_Security_Check(void)
+{
+    volatile SHARED_FILE_LIST *fs = (volatile SHARED_FILE_LIST *)SHARED_FILE_LIST_ADDR;
+
+    // 如果偵測到 CM7 立起了 SD 卡拔除旗標
+    if(fs->sd_dropped == 1)
+    {
+        // 1. 如果此時數據通道（Port 2020/被動模式）接著，立刻主動關閉
+        if(data_client_pcb != NULL)
+        {
+            tcp_abort(data_client_pcb); // 使用 tcp_abort 強制發送 RST 阻斷封包，比 tcp_close 更快更乾淨
+            data_client_pcb = NULL;
+        }
+
+        // 2. 如果控制通道（Port 21）接著，發送告警後主動斷開
+        if(control_client_pcb != NULL)
+        {
+            // 這裡可以選擇溫和地告訴 FileZilla 設備出錯了
+            tcp_write(control_client_pcb, "421 SD Card removed. Closing connection.\r\n", 42, TCP_WRITE_FLAG_COPY);
+            tcp_output(control_client_pcb);
+            
+            // 隨後強制切斷
+            tcp_abort(control_client_pcb);
+            control_client_pcb = NULL;
+        }
+        
+        // 重設狀態旗標
+        ftp_transfer_busy = 0; 
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -156,6 +191,12 @@ int main(void)
     {
         toggle_timer = HAL_GetTick();
     }
+
+
+    CM4_FTP_Security_Check(); // 偵測 CM7 的 SD 卡 是否存在，不存在，則切斷 FTP 連線。
+
+
+
   }
   /* USER CODE END 3 */
 }

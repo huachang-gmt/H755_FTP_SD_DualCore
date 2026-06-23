@@ -24,6 +24,7 @@ int len = snprintf(
         (4) 但會發生 執行 Refresh 就斷線。
 3. 今天的版本勉強算是及格，穩定性還有改善空間。有時會無法連上 Filezilla ，按下開發板的 RESET 按鍵後重試。另外，Refresh 不要太快太頻繁的按，會卡住，因為資料傳輸需要時間。
 4. 附件圖為 Filezilla client 設定為 主動模式 方式。
+5. 新增加 SD 卡不存在時，FTP Server 無法連線。 FTP 連線中，拔除 SD 卡，會自動斷線。一旦 SD 卡回存插槽，FTP 連線恢復正常。關鍵字搜尋 ： sd_dropped 。 CM7 -> CM4 
 
 
 ### [2026-06-18]

@@ -11,13 +11,13 @@
 
 static struct tcp_pcb *server_pcb = NULL;
 static struct tcp_pcb *pasv_pcb = NULL;           // 修改點：維持常駐，不重設 bind，避免 Refresh 斷線
-static struct tcp_pcb *data_client_pcb = NULL;
-static struct tcp_pcb *control_client_pcb = NULL; // 記錄目前的控制通道客戶端
+struct tcp_pcb *data_client_pcb = NULL;
+struct tcp_pcb *control_client_pcb = NULL; // 記錄目前的控制通道客戶端
 
 static char ftp_rx_buffer[256];
 static uint16_t ftp_rx_index = 0;
 static uint8_t data_connected = 0;
-static volatile uint8_t ftp_transfer_busy = 0;
+volatile uint8_t ftp_transfer_busy = 0;
 static char dir_data[8192];
 
 static ip_addr_t active_ip;
