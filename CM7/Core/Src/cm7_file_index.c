@@ -37,14 +37,15 @@ uint32_t CM7_BuildFileList(void)
 
         if (idx >= MAX_FILES)
             break;
-
+        
+        
         strncpy(
              (char*)g_shared_file_list.files[idx].filename,
             fno.fname,
             MAX_NAME_LEN - 1);
 
         g_shared_file_list.files[idx].filename[MAX_NAME_LEN - 1] = '\0';
-
+        
         g_shared_file_list.files[idx].filesize = fno.fsize;
 
         idx++;        

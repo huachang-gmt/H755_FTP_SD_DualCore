@@ -581,29 +581,24 @@ Error_Handler();
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);// 一秒後綠燈熄滅
     }
 
-    SCB_InvalidateDCache_by_Addr(
-        (uint32_t *)&g_shared_file_list,
-        sizeof(g_shared_file_list));
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list)); 
 
     if(g_shared_file_list.update_request)
     {
         g_shared_file_list.update_busy = 1;
-
-        g_shared_file_list.update_done = 0;
-
-        SCB_CleanDCache_by_Addr(
-            (uint32_t *)&g_shared_file_list,
-            sizeof(g_shared_file_list));
+        g_shared_file_list.update_request = 0;
+        g_shared_file_list.update_done = 0;       
 
         CM7_BuildFileList();
 
         g_shared_file_list.update_done = 1;
         g_shared_file_list.update_busy = 0;
-        g_shared_file_list.update_request = 0;
 
-        SCB_CleanDCache_by_Addr(
-            (uint32_t *)&g_shared_file_list,
-            sizeof(g_shared_file_list));
+        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list));
+
+        // 確保硬體總線寫入完成
+        __DSB(); 
+        __ISB();
     
     }
 
@@ -823,8 +818,8 @@ void MPU_Config(void)
 
   HAL_MPU_ConfigRegion(&MPU_InitStruct);
   /* Enables the MPU */
-  HAL_MPU_Enable(MPU_HFNMI_PRIVDEF);
-  //HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT); // 之前成功的做法
+  //HAL_MPU_Enable(MPU_HFNMI_PRIVDEF);
+  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT); // 之前成功的做法
 
 }
 
