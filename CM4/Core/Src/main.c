@@ -175,6 +175,8 @@ int main(void)
     // 1. 維持 LwIP 運行，處理收發封包 (這是最重要的一行！)
     MX_LWIP_Process();
 
+    ftp_poll_cm7_list_ready();
+
     // 2. 每 200ms 檢查一次實體網路線狀態
     if (HAL_GetTick() - last_link_check > 200) 
     {

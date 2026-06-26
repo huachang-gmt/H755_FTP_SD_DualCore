@@ -5,6 +5,7 @@
 
 #define MAX_FILES     128
 #define MAX_NAME_LEN  64
+#define MAX_DOWNLOAD_BYTE 1024
 
 typedef struct
 {
@@ -19,6 +20,14 @@ typedef struct
     volatile uint32_t update_done;
     volatile uint32_t file_count;
     volatile uint8_t sd_dropped;   // 【新增】1: 代表 SD 卡被拔除，控制網路端主動斷線
+
+    volatile uint32_t retr_request;
+    volatile uint32_t retr_busy;
+    volatile uint32_t retr_done;
+    char retr_filename[64];
+    uint32_t retr_size;
+    uint8_t retr_buffer[MAX_DOWNLOAD_BYTE];
+
     FILE_INFO files[MAX_FILES];
 } SHARED_FILE_LIST;
 
@@ -26,5 +35,7 @@ typedef struct
  * 指向 CM7 的 Shared RAM
  */
 #define SHARED_FILE_LIST_ADDR  ((SHARED_FILE_LIST *)0x30040000)
+
+void ftp_poll_cm7_list_ready(void);
 
 #endif

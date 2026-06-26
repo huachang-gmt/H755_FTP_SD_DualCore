@@ -3,6 +3,69 @@
 ## 開發進度追蹤
 
 
+
+### [2026-06-26]
+1. 檔案列表功能 OK。 Filezilla Client 被動模式(PASV) 與 主動模式 (Active Mode) 使用 Power shell ftp>dir 方式 都可以成功執行。
+2. 必須特別注意，SD 卡 內的檔案數量 根據目前的設計格式 ：
+‵
+ `[ "-rw-r--r-- 1 root root %lu Jan 01 2026 %s\r\n" ]` 
+
+ 例如： 
+
+ `-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0000.TXT`
+
+ **只允許 10 個檔案**。 超過 10 個 檔案會發生 連線失敗，取得檔案列表失敗的狀況。
+
+3. 修改 檔案 CM4\Core\Src\tcp_server.c  內的 static char dir_data[8192]; 沒有用，無法因為增加 buffer 數值大小增加檔案列表的檔案數目。
+4. 這個版本 還未具備 完善的 檔案下載功能 。
+5. 如果連線有問題，無法取得 檔案列表，就減少 SD 卡內檔案數量。可以從 3 個檔案開始測試起。
+6. 連上線後，不斷的 Refresh 都沒問題，不會斷線。
+7. 曾試過修改 檔案 lwipopts.h 添加以下設定，試圖增加容量，結果會導致 一開始連線就失敗。
+```c
+/* USER CODE BEGIN 1 */
+/* 手動覆蓋預設組態，解決 FTP 大量資料傳輸逾時問題 */
+
+#undef TCP_MSS
+#undef TCP_SND_BUF
+#undef TCP_WND
+#undef TCP_SND_QUEUELEN
+#undef PBUF_POOL_SIZE
+#undef MEMP_NUM_TCP_PCB
+#undef MEMP_NUM_TCP_PCB_LISTEN
+
+#define TCP_MSS                         1460
+#define TCP_SND_BUF                     (6 * 1460) // 8760
+#define TCP_WND                         (4 * 1460) // 5840
+#define TCP_SND_QUEUELEN                16
+
+/* 這是針對 H7 這類大頻寬處理器，確保 lwIP 不會因為緩衝區過小而丟包 */
+#define PBUF_POOL_SIZE                  32
+#define MEMP_NUM_TCP_PCB                15
+#define MEMP_NUM_TCP_PCB_LISTEN         8
+
+/* 強制忽略 sanitiy check，避免編譯錯誤 */
+#define LWIP_DISABLE_TCP_SANITY_CHECKS  1
+/* USER CODE END 1 */
+```
+8. 以下是使用 主動模式 Power shell 顯示檔案列表 10 個檔案的 樣式
+```text
+ftp> dir
+200 PORT command successful
+150 Opening ASCII mode data connection for file list
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0000.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0001.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0002.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0003.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0004.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0005.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0006.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0007.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0008.TXT
+-rw-r--r-- 1 root root 442368 Jan 01 2026 LOG0009.TXT
+226 Transfer complete
+ftp: 553 位元組已接收，時間: 0.08秒數 6.66KB/sec。
+```
+
 ### [2026-06-23]
 1. 修改點： CM7\Core\Src\main.c ， CM7\Core\Src\cm7_file_index.c 與 CM4\Core\Src\tcp_server.c 。
 2. 在檔案 ： CM4\Core\Src\tcp_server.c 卡關很久，關鍵點在 send_dir_list() 內的 
@@ -25,6 +88,7 @@ int len = snprintf(
 3. 今天的版本勉強算是及格，穩定性還有改善空間。有時會無法連上 Filezilla ，按下開發板的 RESET 按鍵後重試。另外，Refresh 不要太快太頻繁的按，會卡住，因為資料傳輸需要時間。
 4. 附件圖為 Filezilla client 設定為 主動模式 方式。
 5. 新增加 SD 卡不存在時，FTP Server 無法連線。 FTP 連線中，拔除 SD 卡，會自動斷線。一旦 SD 卡回存插槽，FTP 連線恢復正常。關鍵字搜尋 ： sd_dropped 。 CM7 -> CM4 
+6. 使用 Windows 檔案總管 ftp://192.168.88.10 就可以展開 SD 卡內的檔案列表。
 
 
 ### [2026-06-18]

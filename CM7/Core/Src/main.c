@@ -205,7 +205,7 @@ uint32_t CountSegments(uint32_t expected_segments)
 
         SCB_InvalidateDCache_by_Addr(
             (uint32_t*)read_buffer,
-            BUFFER_SIZE_BYTES
+            ALIGN_32_SIZE(BUFFER_SIZE_BYTES)
         );
 
         // 只檢查 tail marker
@@ -316,7 +316,7 @@ void GenerateFatFsFile(uint32_t file_id)
         // D-Cache invalidate
         SCB_InvalidateDCache_by_Addr(
             (uint32_t*)read_buffer,
-            BUFFER_SIZE_BYTES
+            ALIGN_32_SIZE(BUFFER_SIZE_BYTES)
         );
 		
 		if(ValidateChunk() == 0)
@@ -466,6 +466,18 @@ Error_Handler();
             g_sd_mounted  = 1;
 
             CM7_BuildFileList();
+
+            g_shared_file_list.retr_request = 0;
+            g_shared_file_list.retr_busy = 0;
+            g_shared_file_list.retr_done = 0;
+
+            g_shared_file_list.update_request = 0;
+            g_shared_file_list.update_busy = 0;
+            g_shared_file_list.update_done = 1;
+
+            SCB_CleanDCache_by_Addr(
+                (uint32_t *)&g_shared_file_list,
+                ALIGN_32_SIZE(sizeof(g_shared_file_list)));
         }
         else
         {
@@ -517,7 +529,6 @@ Error_Handler();
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  
   /*
   2048 loops = 1 個 64MB segment 
   4096 loops = 2 個 64MB segment 
@@ -553,7 +564,7 @@ Error_Handler();
         // 【關鍵加入】：通知 CM4，SD卡已經不見了，趕快把 FTP 客戶端斷開！
         g_shared_file_list.sd_dropped = 1;
 
-        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list));
+        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, ALIGN_32_SIZE(sizeof(g_shared_file_list)));
 
         // SD 卡不再插槽內
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
@@ -584,29 +595,32 @@ Error_Handler();
         }
 
         g_shared_file_list.sd_dropped = 0; // 【關鍵加入】還原旗標
-        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list));    
+        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, ALIGN_32_SIZE(sizeof(g_shared_file_list)));    
 
         // SD 卡在插槽內
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);// 亮綠燈 (PB0)
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
-        HAL_Delay(1000);
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);// 一秒後綠燈熄滅
+        
     }
 
-    SCB_InvalidateDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list)); 
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&g_shared_file_list, ALIGN_32_SIZE(sizeof(g_shared_file_list))); 
 
+    // 更新檔案列表
     if(g_shared_file_list.update_request)
-    {
-        g_shared_file_list.update_busy = 1;
-        g_shared_file_list.update_request = 0;
-        g_shared_file_list.update_done = 0;       
+    {    
+        g_shared_file_list.update_busy = 1;        
+        g_shared_file_list.update_done = 0;
+        
+        SCB_CleanDCache_by_Addr(
+            (uint32_t *)&g_shared_file_list,
+            ALIGN_32_SIZE(sizeof(g_shared_file_list)));
 
         CM7_BuildFileList();
 
-        g_shared_file_list.update_done = 1;
+        g_shared_file_list.update_done = 1;// 檔案列表已經建置完成，通知 CM4 可以抓取
         g_shared_file_list.update_busy = 0;
+        g_shared_file_list.update_request = 0; // 清除 檔案列表 旗標，等待下一次再執行 dir 檔案列表
 
-        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, sizeof(g_shared_file_list));
+        SCB_CleanDCache_by_Addr((uint32_t *)&g_shared_file_list, ALIGN_32_SIZE(sizeof(g_shared_file_list)));
 
         // 確保硬體總線寫入完成
         __DSB(); 
@@ -614,6 +628,28 @@ Error_Handler();
     
     }
 
+    if(g_shared_file_list.retr_request)
+    {
+        g_shared_file_list.retr_busy = 1;
+        g_shared_file_list.retr_done = 0; 
+
+        SCB_CleanDCache_by_Addr(
+            (uint32_t *)&g_shared_file_list,
+            ALIGN_32_SIZE(sizeof(g_shared_file_list)));
+
+        CM7_ReadFileRequest(&g_shared_file_list);
+
+        g_shared_file_list.retr_done = 1;
+        g_shared_file_list.retr_busy = 0;
+        g_shared_file_list.retr_request = 0;        
+
+        SCB_CleanDCache_by_Addr(
+            (uint32_t *)&g_shared_file_list,
+            ALIGN_32_SIZE(sizeof(g_shared_file_list)));
+
+        __DSB();
+        __ISB();
+    }
 
 /******************************** 暫時關閉 ****************************************************
     // ------------- 將 Raw Data 寫入 SD Card START -------------

@@ -3,7 +3,6 @@
 
 void tcp_server_init(void);
 
-/* FTP Passive Mode */
-void ftp_pasv_init(void);
+void ftp_poll_cm7_list_ready(void);
 
 #endif
